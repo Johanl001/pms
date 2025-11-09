@@ -11,37 +11,72 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // In a real implementation, you would fetch data from your backend
-    // For now, we'll use mock data
-    const mockData = {
-      currentReadings: {
-        soilMoisture: 520,
-        temperature: 24.5,
-        humidity: 62,
-        lightIntensity: 450
-      },
-      healthScore: 87.5,
-      wateringPrediction: {
-        waterNow: false,
-        confidence: 0.23,
-        nextWatering: Date.now() + 7200000 // 2 hours from now
-      },
-      recentData: [
-        { timestamp: Date.now() - 300000, soilMoisture: 515, temperature: 24.2 },
-        { timestamp: Date.now() - 600000, soilMoisture: 518, temperature: 24.3 },
-        { timestamp: Date.now() - 900000, soilMoisture: 522, temperature: 24.4 },
-        { timestamp: Date.now() - 1200000, soilMoisture: 525, temperature: 24.1 },
-        { timestamp: Date.now() - 1500000, soilMoisture: 528, temperature: 24.0 },
-      ]
+    // Function to fetch data from backend
+    const fetchPlantData = async () => {
+      try {
+        const response = await fetch('http://localhost:5000/dashboard_data');
+        const data = await response.json();
+        
+        // Convert snake_case from backend to camelCase for frontend
+        const transformedData = {
+          currentReadings: {
+            soilMoisture: data.current_readings?.soil_moisture || 0,
+            temperature: data.current_readings?.temperature || 0,
+            humidity: data.current_readings?.humidity || 0,
+            lightIntensity: data.current_readings?.light_intensity || 0
+          },
+          healthScore: data.health_score || 0,
+          wateringPrediction: {
+            waterNow: data.watering_prediction?.water_now || false,
+            confidence: data.watering_prediction?.confidence || 0,
+            nextWatering: data.watering_prediction?.next_watering ? data.watering_prediction.next_watering * 1000 : Date.now() + 7200000
+          },
+          recentData: (data.recent_data || []).map(item => ({
+            timestamp: item.timestamp ? (typeof item.timestamp === 'number' ? item.timestamp * 1000 : item.timestamp) : Date.now(),
+            soilMoisture: item.soil_moisture || item.soilMoisture || 0,
+            temperature: item.temperature || 0,
+            humidity: item.humidity || 0,
+            lightIntensity: item.light_intensity || item.lightIntensity || 0
+          }))
+        };
+        
+        setPlantData(transformedData);
+        setLoading(false);
+      } catch (error) {
+        console.error('Error fetching plant data:', error);
+        // Fallback to mock data if backend is not available
+        const mockData = {
+          currentReadings: {
+            soilMoisture: 520,
+            temperature: 24.5,
+            humidity: 62,
+            lightIntensity: 450
+          },
+          healthScore: 87.5,
+          wateringPrediction: {
+            waterNow: false,
+            confidence: 0.23,
+            nextWatering: Date.now() + 7200000 // 2 hours from now
+          },
+          recentData: [
+            { timestamp: Date.now() - 300000, soilMoisture: 515, temperature: 24.2, humidity: 60, lightIntensity: 500 },
+            { timestamp: Date.now() - 600000, soilMoisture: 518, temperature: 24.3, humidity: 61, lightIntensity: 490 },
+            { timestamp: Date.now() - 900000, soilMoisture: 522, temperature: 24.4, humidity: 62, lightIntensity: 480 },
+            { timestamp: Date.now() - 1200000, soilMoisture: 525, temperature: 24.1, humidity: 59, lightIntensity: 510 },
+            { timestamp: Date.now() - 1500000, soilMoisture: 528, temperature: 24.0, humidity: 58, lightIntensity: 520 },
+          ]
+        };
+        
+        setPlantData(mockData);
+        setLoading(false);
+      }
     };
-    
-    setPlantData(mockData);
-    setLoading(false);
+
+    // Fetch initial data
+    fetchPlantData();
     
     // Set up polling for real-time data updates
-    const interval = setInterval(() => {
-      // In a real implementation, you would fetch updated data from your backend
-    }, 10000);
+    const interval = setInterval(fetchPlantData, 10000);
     
     return () => clearInterval(interval);
   }, []);

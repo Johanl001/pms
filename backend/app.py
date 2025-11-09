@@ -1,4 +1,5 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import IsolationForest
@@ -20,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 # Initialize Flask app
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 
 # Initialize Firebase (you'll need to add your service account key)
 db = None
@@ -45,6 +47,9 @@ anomaly_detector = None
 disease_model = None
 sensor_data_buffer = []
 
+# In-memory storage for sensor data (as a temporary solution while Firebase is not configured)
+in_memory_storage = []
+
 # Safety parameters
 MAX_PUMP_TIME = 20  # seconds
 MIN_WATERING_INTERVAL = 6 * 3600  # 6 hours
@@ -62,11 +67,21 @@ def initialize_models():
     
     # Initialize disease detection model
     try:
-        disease_model = tf.lite.Interpreter(model_path="plant_disease_model.tflite")
-        disease_model.allocate_tensors()
-        logger.info("Disease detection model loaded successfully")
+        import os
+        model_path = "plant_disease_model.tflite"
+        # Try current directory first, then backend directory
+        if not os.path.exists(model_path):
+            model_path = os.path.join(os.path.dirname(__file__), "plant_disease_model.tflite")
+        if os.path.exists(model_path):
+            disease_model = tf.lite.Interpreter(model_path=model_path)
+            disease_model.allocate_tensors()
+            logger.info(f"Disease detection model loaded successfully from {model_path}")
+        else:
+            logger.warning("Disease detection model file not found. Disease detection will use mock data.")
+            disease_model = None
     except Exception as e:
         logger.warning(f"Failed to load disease detection model: {e}")
+        disease_model = None
     
     logger.info("Models initialized")
 
@@ -144,7 +159,7 @@ def predict_watering_time(sensor_data):
         probability = 0.0
     
     # Decision based on confidence threshold
-    water_now = probability >= 0.85
+    water_now = bool(probability >= 0.85)  # Convert to Python bool
     confidence = float(probability)
     
     # Simple estimation of next watering time (in hours)
@@ -155,7 +170,7 @@ def predict_watering_time(sensor_data):
     return {
         "water_now": water_now,
         "confidence": confidence,
-        "next_watering": next_watering
+        "next_watering": float(next_watering)  # Convert to Python float
     }
 
 # Detect anomalies in sensor data
@@ -314,21 +329,28 @@ def check_safety_constraints(action, last_actuation_time):
 
 # Log data to database
 def log_data(sensor_data, health_score, watering_prediction, is_anomaly):
-    # In a real implementation, you would save to Firebase or another database
-    # For now, we'll just log to console
+    # Log to console
     logger.info(f"Sensor Data: {sensor_data}")
     logger.info(f"Health Score: {health_score}")
     logger.info(f"Watering Prediction: {watering_prediction}")
     logger.info(f"Anomaly Detected: {is_anomaly}")
     
-    # Example of what would be saved to database:
+    # Store in memory (as a temporary solution while Firebase is not configured)
+    global in_memory_storage
     log_entry = {
         "timestamp": sensor_data.get("timestamp", time.time()),
         "sensor_data": sensor_data,
-        "health_score": health_score,
+        "health_score": float(health_score),
         "watering_prediction": watering_prediction,
-        "anomaly_detected": is_anomaly
+        "anomaly_detected": bool(is_anomaly)
     }
+    
+    # Add to in-memory storage
+    in_memory_storage.append(log_entry)
+    
+    # Keep only the last 100 entries to prevent memory issues
+    if len(in_memory_storage) > 100:
+        in_memory_storage.pop(0)
     
     # Save to Firebase if available
     if db is not None:
@@ -368,12 +390,12 @@ def receive_sensor_data():
         # Log data
         log_entry = log_data(sensor_data, health_score, watering_prediction, is_anomaly)
         
-        # Prepare response for ESP32
+        # Prepare response for ESP32 (convert numpy types to Python native types)
         response = {
-            "water": actuate_water,
+            "water": bool(actuate_water),  # Convert numpy.bool_ to Python bool
             "light": False,  # Placeholder - in a real implementation, you would determine this based on light needs
-            "health_score": health_score,
-            "anomaly_detected": is_anomaly
+            "health_score": float(health_score),
+            "anomaly_detected": bool(is_anomaly)
         }
         
         return jsonify(response)
@@ -428,22 +450,56 @@ def actuate():
         data = request.get_json()
         action = data.get('action')
         force = data.get('force', False)
+        state = data.get('state')  # For light control
         
         if not action:
             return jsonify({"error": "No action specified"}), 400
         
-        # In a real implementation, you would:
-        # 1. Check safety constraints
-        # 2. Actuate the appropriate device
-        # 3. Log the action
+        # Handle different actions
+        if action == 'water':
+            # Check safety constraints if not forced
+            if not force:
+                # In a real implementation, check last watering time from database
+                last_watering_time = 0  # Placeholder
+                safe_to_water, message = check_safety_constraints("water", last_watering_time)
+                if not safe_to_water:
+                    return jsonify({"error": message}), 400
+            
+            # Log the action
+            logger.info(f"Watering command received (force: {force})")
+            response = {
+                "action": "water",
+                "status": "executed",
+                "message": "Watering command sent to device",
+                "timestamp": time.time()
+            }
+            
+        elif action == 'light':
+            # Handle light toggle
+            light_state = state if state is not None else True
+            logger.info(f"Light control command: {'ON' if light_state else 'OFF'}")
+            response = {
+                "action": "light",
+                "state": light_state,
+                "status": "executed",
+                "message": f"Light turned {'ON' if light_state else 'OFF'}",
+                "timestamp": time.time()
+            }
+        else:
+            return jsonify({"error": f"Unknown action: {action}"}), 400
         
-        response = {
-            "action": action,
-            "status": "executed",
-            "timestamp": time.time()
-        }
+        # Save to database if available
+        if db is not None:
+            try:
+                db.collection('actuations').add({
+                    "timestamp": time.time(),
+                    "action": action,
+                    "force": force,
+                    "state": state if action == 'light' else None
+                })
+            except Exception as e:
+                logger.error(f"Failed to save actuation to Firebase: {e}")
         
-        logger.info(f"Actuation command: {action}")
         return jsonify(response)
         
     except Exception as e:
@@ -453,29 +509,153 @@ def actuate():
 # Endpoint to get dashboard data
 @app.route('/dashboard_data', methods=['GET'])
 def dashboard_data():
-    # In a real implementation, you would retrieve data from database
-    # For now, return mock data
-    mock_data = {
-        "current_readings": {
+    # Try to retrieve data from database or use in-memory storage
+    try:
+        global in_memory_storage
+        
+        # Use in-memory storage if Firebase is not available or as a fallback
+        if in_memory_storage or db is None:
+            # Get the most recent data from in-memory storage
+            if in_memory_storage:
+                # Sort by timestamp to get the most recent first
+                sorted_data = sorted(in_memory_storage, key=lambda x: x['timestamp'], reverse=True)
+                recent_data = []
+                
+                # Format recent data for the chart
+                for data in sorted_data[:10]:  # Last 10 entries
+                    sensor_data = data.get("sensor_data", {})
+                    recent_data.append({
+                        "timestamp": data.get("timestamp", time.time()),
+                        "soil_moisture": sensor_data.get("soil_moisture", 0),
+                        "temperature": sensor_data.get("temperature", 0),
+                        "humidity": sensor_data.get("humidity", 0),
+                        "light_intensity": sensor_data.get("light_intensity", 0)
+                    })
+                # Reverse to show chronological order (oldest first)
+                recent_data.reverse()
+                
+                # Get the most recent data for current readings
+                latest_data = sorted_data[0]
+                sensor_data = latest_data.get("sensor_data", {})
+                current_readings = {
+                    "soil_moisture": sensor_data.get("soil_moisture", 0),
+                    "temperature": sensor_data.get("temperature", 0),
+                    "humidity": sensor_data.get("humidity", 0),
+                    "light_intensity": sensor_data.get("light_intensity", 0)
+                }
+                
+                # Get health score and watering prediction from the document
+                health_score = latest_data.get("health_score", 85.0)
+                watering_prediction = latest_data.get("watering_prediction", {
+                    "water_now": False,
+                    "confidence": 0.3,
+                    "next_watering": time.time() + 7200
+                })
+            else:
+                # Fallback to mock data if no recent data
+                current_readings = {
+                    "soil_moisture": 520,
+                    "temperature": 24.5,
+                    "humidity": 62,
+                    "light_intensity": 450
+                }
+                health_score = 87.5
+                watering_prediction = {
+                    "water_now": False,
+                    "confidence": 0.23,
+                    "next_watering": time.time() + 7200
+                }
+                recent_data = [
+                    {"timestamp": time.time() - 300, "soil_moisture": 515, "temperature": 24.2, "humidity": 60, "light_intensity": 500},
+                    {"timestamp": time.time() - 600, "soil_moisture": 518, "temperature": 24.3, "humidity": 61, "light_intensity": 490},
+                    {"timestamp": time.time() - 900, "soil_moisture": 522, "temperature": 24.4, "humidity": 62, "light_intensity": 480},
+                ]
+        else:
+            # Try to get data from Firebase
+            recent_data_ref = db.collection('plant_data').order_by('timestamp', direction='DESCENDING').limit(10)
+            recent_docs = recent_data_ref.stream()
+            
+            recent_data = []
+            latest_doc_data = None
+            for doc in recent_docs:
+                data = doc.to_dict()
+                if latest_doc_data is None:
+                    latest_doc_data = data  # Store the first (most recent) document
+                sensor_data = data.get("sensor_data", {})
+                recent_data.append({
+                    "timestamp": data.get("timestamp", time.time()),
+                    "soil_moisture": sensor_data.get("soil_moisture", 0),
+                    "temperature": sensor_data.get("temperature", 0),
+                    "humidity": sensor_data.get("humidity", 0),
+                    "light_intensity": sensor_data.get("light_intensity", 0)
+                })
+            
+            # Get the most recent data for current readings
+            if recent_data and latest_doc_data is not None:
+                latest_data = recent_data[0]
+                current_readings = {
+                    "soil_moisture": latest_data["soil_moisture"],
+                    "temperature": latest_data["temperature"],
+                    "humidity": latest_data["humidity"],
+                    "light_intensity": latest_data["light_intensity"]
+                }
+                
+                # Get health score and watering prediction from the document
+                health_score = latest_doc_data.get("health_score", 85.0)
+                watering_prediction = latest_doc_data.get("watering_prediction", {
+                    "water_now": False,
+                    "confidence": 0.3,
+                    "next_watering": time.time() + 7200
+                })
+            else:
+                # Fallback to mock data if no recent data
+                current_readings = {
+                    "soil_moisture": 520,
+                    "temperature": 24.5,
+                    "humidity": 62,
+                    "light_intensity": 450
+                }
+                health_score = 87.5
+                watering_prediction = {
+                    "water_now": False,
+                    "confidence": 0.23,
+                    "next_watering": time.time() + 7200
+                }
+                recent_data = [
+                    {"timestamp": time.time() - 300, "soil_moisture": 515, "temperature": 24.2, "humidity": 60, "light_intensity": 500},
+                    {"timestamp": time.time() - 600, "soil_moisture": 518, "temperature": 24.3, "humidity": 61, "light_intensity": 490},
+                    {"timestamp": time.time() - 900, "soil_moisture": 522, "temperature": 24.4, "humidity": 62, "light_intensity": 480},
+                ]
+    except Exception as e:
+        logger.error(f"Error retrieving dashboard data: {e}")
+        # Fallback to mock data on error
+        current_readings = {
             "soil_moisture": 520,
             "temperature": 24.5,
             "humidity": 62,
             "light_intensity": 450
-        },
-        "health_score": 87.5,
-        "watering_prediction": {
+        }
+        health_score = 87.5
+        watering_prediction = {
             "water_now": False,
             "confidence": 0.23,
-            "next_watering": time.time() + 7200  # 2 hours from now
-        },
-        "recent_data": [
-            {"timestamp": time.time() - 300, "soil_moisture": 515, "temperature": 24.2},
-            {"timestamp": time.time() - 600, "soil_moisture": 518, "temperature": 24.3},
-            {"timestamp": time.time() - 900, "soil_moisture": 522, "temperature": 24.4},
+            "next_watering": time.time() + 7200
+        }
+        recent_data = [
+            {"timestamp": time.time() - 300, "soil_moisture": 515, "temperature": 24.2, "humidity": 60, "light_intensity": 500},
+            {"timestamp": time.time() - 600, "soil_moisture": 518, "temperature": 24.3, "humidity": 61, "light_intensity": 490},
+            {"timestamp": time.time() - 900, "soil_moisture": 522, "temperature": 24.4, "humidity": 62, "light_intensity": 480},
         ]
+    
+    dashboard_data = {
+        "current_readings": current_readings,
+        "health_score": health_score,
+        "watering_prediction": watering_prediction,
+        "recent_data": recent_data
     }
     
-    return jsonify(mock_data)
+    logger.info(f"Sending dashboard data: {dashboard_data}")
+    return jsonify(dashboard_data)
 
 # Initialize models when app starts
 with app.app_context():

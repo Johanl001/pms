@@ -14,7 +14,7 @@
 // Network credentials
 const char* ssid = "YOUR_WIFI_SSID";
 const char* password = "YOUR_WIFI_PASSWORD";
-const char* serverUrl = "http://your-server-ip:5000/data";
+const char* serverUrl = "http://192.168.0.102:5000/data";
 
 // Timing constants
 const unsigned long SENSOR_READ_INTERVAL = 10000; // 10 seconds

@@ -17,14 +17,14 @@ const Dashboard = ({ plantData, loading }) => {
   const { currentReadings, healthScore, wateringPrediction, recentData } = plantData;
 
   // Format data for charts
-  const soilMoistureData = recentData.map(point => ({
+  const soilMoistureData = (recentData || []).map(point => ({
     time: new Date(point.timestamp).toLocaleTimeString(),
-    moisture: point.soilMoisture
+    moisture: point.soilMoisture || 0
   }));
 
-  const temperatureData = recentData.map(point => ({
+  const temperatureData = (recentData || []).map(point => ({
     time: new Date(point.timestamp).toLocaleTimeString(),
-    temperature: point.temperature
+    temperature: point.temperature || 0
   }));
 
   const healthData = [
@@ -37,24 +37,32 @@ const Dashboard = ({ plantData, loading }) => {
   const handleWaterNow = async () => {
     try {
       setWatering(true);
-      // In a real implementation, you would send a request to your backend
-      // await axios.post('/api/actuate', { action: 'water', force: true });
-      setTimeout(() => setWatering(false), 2000); // Simulate API call
+      const response = await axios.post('http://localhost:5000/actuate', { 
+        action: 'water', 
+        force: true 
+      });
+      console.log('Watering response:', response.data);
+      setTimeout(() => setWatering(false), 2000);
     } catch (error) {
       console.error('Error watering plant:', error);
       setWatering(false);
+      alert('Failed to water plant. Please try again.');
     }
   };
 
   const toggleLight = async () => {
     try {
       const newState = !light;
+      const response = await axios.post('http://localhost:5000/actuate', { 
+        action: 'light', 
+        state: newState 
+      });
+      console.log('Light toggle response:', response.data);
       setLight(newState);
-      // In a real implementation, you would send a request to your backend
-      // await axios.post('/api/actuate', { action: 'light', state: newState });
     } catch (error) {
       console.error('Error toggling light:', error);
-      setLight(!light); // Revert state on error
+      alert('Failed to toggle light. Please try again.');
+      // Don't revert state on error to avoid confusion
     }
   };
 

@@ -28,28 +28,18 @@ const DiseaseDetection = () => {
     setError(null);
 
     try {
-      // In a real implementation, you would send the image to your backend
-      // const formData = new FormData();
-      // formData.append('image', selectedImage);
-      // const response = await axios.post('/api/upload_image', formData, {
-      //   headers: {
-      //     'Content-Type': 'multipart/form-data'
-      //   }
-      // });
+      const formData = new FormData();
+      formData.append('image', selectedImage);
+      const response = await axios.post('http://localhost:5000/upload_image', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
 
-      // Mock response for demonstration
-      const mockResponse = {
-        disease: 'Healthy',
-        confidence: 0.92,
-        treatment: 'Your plant is healthy! Keep up the good care.'
-      };
-
-      // Simulate API delay
-      setTimeout(() => {
-        setAnalysisResult(mockResponse);
-        setLoading(false);
-      }, 2000);
+      setAnalysisResult(response.data);
+      setLoading(false);
     } catch (err) {
+      console.error('Error analyzing image:', err);
       setError('Failed to analyze image. Please try again.');
       setLoading(false);
     }
