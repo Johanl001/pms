@@ -163,3 +163,4 @@ htmlcov/
 build/
 dist/
 *.egg-info/"ai_models/PlantVillage/" 
+"ai_models/PlantVillage/" 
