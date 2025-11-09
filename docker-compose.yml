@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=development
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - firestore
+    networks:
+      - plant-network
+
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./dashboard:/app
+      - /app/node_modules
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+    networks:
+      - plant-network
+
+  firestore:
+    image: google/cloud-sdk:emulators
+    ports:
+      - "8080:8080"
+    command: gcloud beta emulators firestore start --host-port=0.0.0.0:8080
+    networks:
+      - plant-network
+
+networks:
+  plant-network:
+    driver: bridge
