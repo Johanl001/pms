@@ -139,9 +139,14 @@ node_modules/
 ehthumbs.db  
 Thumbs.db  
   
-# Firebase credentials (important to exclude for security)  
-serviceAccountKey.json 
-  
+# Firebase credentials (important to exclude for security)
+serviceAccountKey.json
+
+# Model files (too large for GitHub)
+backend/plant_disease_model.tflite
+backend/plant_disease_model_best.h5
+ai_models/backend/
+
 # Temporary files  
 *.tmp  
 *.temp  
