@@ -50,6 +50,18 @@ sensor_data_buffer = []
 # In-memory storage for sensor data (as a temporary solution while Firebase is not configured)
 in_memory_storage = []
 
+# In-memory storage for plant profile data (as a temporary solution while Firebase is not configured)
+plant_profile_storage = {
+    "plantName": "Green Friend",
+    "plantType": "Pothos",
+    "plantAge": "8 months",
+    "wateringPref": "Medium",
+    "lightPref": "Low to Medium",
+    "notes": "Thriving in the corner by the window",
+    "plantImage": None,
+    "careHistory": []
+}
+
 # Safety parameters
 MAX_PUMP_TIME = 20  # seconds
 MIN_WATERING_INTERVAL = 6 * 3600  # 6 hours
@@ -671,6 +683,55 @@ def dashboard_data():
     
     logger.info(f"Sending dashboard data: {dashboard_data}")
     return jsonify(dashboard_data)
+
+# Endpoint to get plant profile data
+@app.route('/plant_profile', methods=['GET'])
+def get_plant_profile():
+    try:
+        global plant_profile_storage
+        
+        # If Firebase is available, try to get data from there
+        if db is not None:
+            try:
+                doc = db.collection('plant_profiles').document('default').get()
+                if doc.exists:
+                    plant_profile_storage = doc.to_dict()
+                    logger.info("Plant profile data retrieved from Firebase")
+                else:
+                    logger.info("No plant profile found in Firebase, using default values")
+            except Exception as e:
+                logger.error(f"Error retrieving plant profile from Firebase: {e}")
+        
+        return jsonify(plant_profile_storage)
+    except Exception as e:
+        logger.error(f"Error retrieving plant profile: {e}")
+        return jsonify({"error": "Failed to retrieve plant profile"}), 500
+
+# Endpoint to save plant profile data
+@app.route('/plant_profile', methods=['POST'])
+def save_plant_profile():
+    try:
+        global plant_profile_storage
+        
+        # Get the data from the request
+        data = request.get_json()
+        
+        # Update in-memory storage
+        plant_profile_storage.update(data)
+        
+        # Save to Firebase if available
+        if db is not None:
+            try:
+                db.collection('plant_profiles').document('default').set(data)
+                logger.info("Plant profile data saved to Firebase")
+            except Exception as e:
+                logger.error(f"Error saving plant profile to Firebase: {e}")
+                return jsonify({"error": "Failed to save plant profile to database"}), 500
+        
+        return jsonify({"message": "Plant profile saved successfully"})
+    except Exception as e:
+        logger.error(f"Error saving plant profile: {e}")
+        return jsonify({"error": "Failed to save plant profile"}), 500
 
 # Initialize models when app starts
 with app.app_context():

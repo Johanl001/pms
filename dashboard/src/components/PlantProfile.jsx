@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 const PlantProfile = () => {
   const [plantName, setPlantName] = useState('Green Friend');
@@ -7,11 +7,85 @@ const PlantProfile = () => {
   const [wateringPref, setWateringPref] = useState('Medium');
   const [lightPref, setLightPref] = useState('Low to Medium');
   const [notes, setNotes] = useState('Thriving in the corner by the window');
+  const [plantImage, setPlantImage] = useState(null);
+  const [careHistory, setCareHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const handleSave = () => {
-    // In a real implementation, you would save this data to your backend
-    alert('Plant profile saved!');
+  // Load plant profile data when component mounts
+  useEffect(() => {
+    const loadPlantProfile = async () => {
+      try {
+        const response = await fetch('http://localhost:5000/plant_profile');
+        const data = await response.json();
+        
+        setPlantName(data.plantName || 'Green Friend');
+        setPlantType(data.plantType || 'Pothos');
+        setPlantAge(data.plantAge || '8 months');
+        setWateringPref(data.wateringPref || 'Medium');
+        setLightPref(data.lightPref || 'Low to Medium');
+        setNotes(data.notes || 'Thriving in the corner by the window');
+        setPlantImage(data.plantImage || null);
+        setCareHistory(data.careHistory || []);
+      } catch (error) {
+        console.error('Error loading plant profile:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadPlantProfile();
+  }, []);
+
+  const handleSave = async () => {
+    try {
+      const profileData = {
+        plantName,
+        plantType,
+        plantAge,
+        wateringPref,
+        lightPref,
+        notes,
+        plantImage,
+        careHistory
+      };
+
+      const response = await fetch('http://localhost:5000/plant_profile', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(profileData),
+      });
+
+      if (response.ok) {
+        alert('Plant profile saved successfully!');
+      } else {
+        alert('Failed to save plant profile.');
+      }
+    } catch (error) {
+      console.error('Error saving plant profile:', error);
+      alert('Error saving plant profile.');
+    }
   };
+
+  const handleImageUpload = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        setPlantImage(e.target.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-500"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -24,8 +98,32 @@ const PlantProfile = () => {
         <div className="p-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
             <div className="md:col-span-1 flex justify-center">
-              <div className="bg-gray-200 border-2 border-dashed rounded-xl w-48 h-48 flex items-center justify-center text-gray-500">
-                Plant Image
+              <div className="relative">
+                {plantImage ? (
+                  <img 
+                    src={plantImage} 
+                    alt="Plant" 
+                    className="w-48 h-48 object-cover rounded-xl border-2 border-green-300"
+                  />
+                ) : (
+                  <div className="bg-gray-200 border-2 border-dashed rounded-xl w-48 h-48 flex items-center justify-center text-gray-500">
+                    Plant Image
+                  </div>
+                )}
+                <div className="mt-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Upload Image</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    className="block w-full text-sm text-gray-500
+                      file:mr-4 file:py-2 file:px-4
+                      file:rounded-md file:border-0
+                      file:text-sm file:font-semibold
+                      file:bg-green-50 file:text-green-700
+                      hover:file:bg-green-100"
+                  />
+                </div>
               </div>
             </div>
             
@@ -129,39 +227,27 @@ const PlantProfile = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-200 bg-white">
-                  <tr>
-                    <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
-                      Jun 12, 2023
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                      Watered
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                      Normal watering
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
-                      Jun 10, 2023
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                      Pruned
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                      Removed yellow leaves
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
-                      Jun 5, 2023
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                      Fertilized
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
-                      Used organic fertilizer
-                    </td>
-                  </tr>
+                  {careHistory.length > 0 ? (
+                    careHistory.map((entry, index) => (
+                      <tr key={index}>
+                        <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">
+                          {entry.date}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                          {entry.action}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                          {entry.notes}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="3" className="py-4 pl-4 pr-3 text-sm text-gray-500 text-center">
+                        No care history recorded yet. History will appear here as you care for your plant.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
