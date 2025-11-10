@@ -31,6 +31,7 @@ function App() {
             confidence: data.watering_prediction?.confidence || 0,
             nextWatering: data.watering_prediction?.next_watering ? data.watering_prediction.next_watering * 1000 : Date.now() + 7200000
           },
+          anomalyDetected: data.anomaly_detected || false,
           recentData: (data.recent_data || []).map(item => ({
             timestamp: item.timestamp ? (typeof item.timestamp === 'number' ? item.timestamp * 1000 : item.timestamp) : Date.now(),
             soilMoisture: item.soil_moisture || item.soilMoisture || 0,

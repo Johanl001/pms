@@ -352,6 +352,9 @@ def log_data(sensor_data, health_score, watering_prediction, is_anomaly):
     if len(in_memory_storage) > 100:
         in_memory_storage.pop(0)
     
+    # Log the current size of in_memory_storage
+    logger.info(f"In-memory storage now contains {len(in_memory_storage)} entries")
+    
     # Save to Firebase if available
     if db is not None:
         try:
@@ -513,6 +516,14 @@ def dashboard_data():
     try:
         global in_memory_storage
         
+        # Log the current state of in_memory_storage for debugging
+        logger.info(f"In-memory storage length: {len(in_memory_storage)}")
+        if in_memory_storage:
+            logger.info(f"Latest entry: {in_memory_storage[-1] if in_memory_storage else 'None'}")
+        
+        # Initialize default values
+        anomaly_detected = False
+        
         # Use in-memory storage if Firebase is not available or as a fallback
         if in_memory_storage or db is None:
             # Get the most recent data from in-memory storage
@@ -531,8 +542,6 @@ def dashboard_data():
                         "humidity": sensor_data.get("humidity", 0),
                         "light_intensity": sensor_data.get("light_intensity", 0)
                     })
-                # Reverse to show chronological order (oldest first)
-                recent_data.reverse()
                 
                 # Get the most recent data for current readings
                 latest_data = sorted_data[0]
@@ -551,6 +560,7 @@ def dashboard_data():
                     "confidence": 0.3,
                     "next_watering": time.time() + 7200
                 })
+                anomaly_detected = latest_data.get("anomaly_detected", False)
             else:
                 # Fallback to mock data if no recent data
                 current_readings = {
@@ -565,6 +575,7 @@ def dashboard_data():
                     "confidence": 0.23,
                     "next_watering": time.time() + 7200
                 }
+                anomaly_detected = False
                 recent_data = [
                     {"timestamp": time.time() - 300, "soil_moisture": 515, "temperature": 24.2, "humidity": 60, "light_intensity": 500},
                     {"timestamp": time.time() - 600, "soil_moisture": 518, "temperature": 24.3, "humidity": 61, "light_intensity": 490},
@@ -607,6 +618,7 @@ def dashboard_data():
                     "confidence": 0.3,
                     "next_watering": time.time() + 7200
                 })
+                anomaly_detected = latest_doc_data.get("anomaly_detected", False)
             else:
                 # Fallback to mock data if no recent data
                 current_readings = {
@@ -621,6 +633,7 @@ def dashboard_data():
                     "confidence": 0.23,
                     "next_watering": time.time() + 7200
                 }
+                anomaly_detected = False
                 recent_data = [
                     {"timestamp": time.time() - 300, "soil_moisture": 515, "temperature": 24.2, "humidity": 60, "light_intensity": 500},
                     {"timestamp": time.time() - 600, "soil_moisture": 518, "temperature": 24.3, "humidity": 61, "light_intensity": 490},
@@ -641,6 +654,7 @@ def dashboard_data():
             "confidence": 0.23,
             "next_watering": time.time() + 7200
         }
+        anomaly_detected = False
         recent_data = [
             {"timestamp": time.time() - 300, "soil_moisture": 515, "temperature": 24.2, "humidity": 60, "light_intensity": 500},
             {"timestamp": time.time() - 600, "soil_moisture": 518, "temperature": 24.3, "humidity": 61, "light_intensity": 490},
@@ -651,6 +665,7 @@ def dashboard_data():
         "current_readings": current_readings,
         "health_score": health_score,
         "watering_prediction": watering_prediction,
+        "anomaly_detected": anomaly_detected,
         "recent_data": recent_data
     }
     

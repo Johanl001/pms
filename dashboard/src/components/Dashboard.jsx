@@ -4,6 +4,7 @@ import {
   BarChart, Bar, PieChart, Pie, Cell
 } from 'recharts';
 import axios from 'axios';
+import PlantAlerts from './PlantAlerts';
 
 const Dashboard = ({ plantData, loading }) => {
   const [mode, setMode] = useState('auto'); // 'auto' or 'manual'
@@ -43,10 +44,12 @@ const Dashboard = ({ plantData, loading }) => {
       });
       console.log('Watering response:', response.data);
       setTimeout(() => setWatering(false), 2000);
+      return response.data;
     } catch (error) {
       console.error('Error watering plant:', error);
       setWatering(false);
       alert('Failed to water plant. Please try again.');
+      throw error;
     }
   };
 
@@ -59,9 +62,11 @@ const Dashboard = ({ plantData, loading }) => {
       });
       console.log('Light toggle response:', response.data);
       setLight(newState);
+      return response.data;
     } catch (error) {
       console.error('Error toggling light:', error);
       alert('Failed to toggle light. Please try again.');
+      throw error;
       // Don't revert state on error to avoid confusion
     }
   };
@@ -79,6 +84,13 @@ const Dashboard = ({ plantData, loading }) => {
 
   return (
     <div className="space-y-6">
+      {/* Plant Alerts - Blynk-style notifications */}
+      <PlantAlerts 
+        plantData={plantData} 
+        onWaterNow={handleWaterNow}
+        onToggleLight={toggleLight}
+      />
+
       {/* Health Score and Controls */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Health Score Card */}
